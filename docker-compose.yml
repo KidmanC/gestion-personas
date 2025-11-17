@@ -50,6 +50,18 @@ services:
     restart: unless-stopped
     networks:
       - app-network
+  
+  # Servicio de Orquestación
+  orchestration-service:
+    build: ./microservicio-orquestacion
+    ports:
+      - "3006:3006"
+    container_name: ms-orquestacion
+    restart: unless-stopped
+    networks:
+      - app-network
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
 
 # Red personalizada para que los servicios se comuniquen
 networks:
