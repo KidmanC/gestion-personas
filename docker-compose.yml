@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  # Microservicio de Creación
+  creation-service:
+    build: ./microservicio-creacion
+    ports:
+      - "3001:3001"
+    container_name: ms-creacion
+    restart: unless-stopped
+    networks:
+      - app-network
+
+  # Microservicio de Consulta
+  query-service:
+    build: ./microservicio-consulta
+    ports:
+      - "3002:3002"
+    container_name: ms-consulta
+    restart: unless-stopped
+    networks:
+      - app-network
+
+  # Microservicio de Actualización
+  update-service:
+    build: ./microservicio-actualizacion
+    ports:
+      - "3003:3003"
+    container_name: ms-actualizacion
+    restart: unless-stopped
+    networks:
+      - app-network
+
+  # Microservicio de Eliminación
+  delete-service:
+    build: ./microservicio-eliminacion
+    ports:
+      - "3004:3004"
+    container_name: ms-eliminacion
+    restart: unless-stopped
+    networks:
+      - app-network
+
+  # Servicio de Logs
+  logs-service:
+    build: ./servicio-logs
+    ports:
+      - "3005:3005"
+    container_name: ms-logs
+    restart: unless-stopped
+    networks:
+      - app-network
+
+# Red personalizada para que los servicios se comuniquen
+networks:
+  app-network:
+    driver: bridge
