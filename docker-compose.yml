@@ -1,12 +1,31 @@
 version: '3.8'
 
 services:
+  postgres:
+    image: postgres:16
+    container_name: users_db
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASS}
+      POSTGRES_DB: ${DB_NAME}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - app-network    
+
   # Microservicio de Creación
   creation-service:
     build: ./microservicio-creacion
+    env_file:
+      - .env
     ports:
       - "3001:3001"
     container_name: ms-creacion
+    depends_on:
+    - postgres
     restart: unless-stopped
     networks:
       - app-network
@@ -14,9 +33,13 @@ services:
   # Microservicio de Consulta
   query-service:
     build: ./microservicio-consulta
+    env_file:
+      - .env
     ports:
       - "3002:3002"
     container_name: ms-consulta
+    depends_on:
+    - postgres
     restart: unless-stopped
     networks:
       - app-network
@@ -24,6 +47,8 @@ services:
   # Microservicio de Actualización
   update-service:
     build: ./microservicio-actualizacion
+    env_file:
+      - .env
     ports:
       - "3003:3003"
     container_name: ms-actualizacion
@@ -34,6 +59,8 @@ services:
   # Microservicio de Eliminación
   delete-service:
     build: ./microservicio-eliminacion
+    env_file:
+      - .env
     ports:
       - "3004:3004"
     container_name: ms-eliminacion
@@ -44,6 +71,8 @@ services:
   # Servicio de Logs
   logs-service:
     build: ./servicio-logs
+    env_file:
+      - .env
     ports:
       - "3005:3005"
     container_name: ms-logs
@@ -67,3 +96,6 @@ services:
 networks:
   app-network:
     driver: bridge
+    
+volumes:
+  postgres_data:    
