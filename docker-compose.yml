@@ -52,6 +52,8 @@ services:
     ports:
       - "3003:3003"
     container_name: ms-actualizacion
+    depends_on:
+    - postgres
     restart: unless-stopped
     networks:
       - app-network
@@ -64,6 +66,8 @@ services:
     ports:
       - "3004:3004"
     container_name: ms-eliminacion
+    depends_on:
+    - postgres
     restart: unless-stopped
     networks:
       - app-network
@@ -76,9 +80,25 @@ services:
     ports:
       - "3005:3005"
     container_name: ms-logs
+    depends_on:
+    - postgres
     restart: unless-stopped
     networks:
       - app-network
+
+  # Servicio rag
+  rag-service:
+    build: ./microservicio-llm
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    container_name: ms-llm
+    depends_on:
+    - postgres
+    restart: unless-stopped
+    networks:
+      - app-network    
   
   # Servicio de Orquestación
   orchestration-service:
