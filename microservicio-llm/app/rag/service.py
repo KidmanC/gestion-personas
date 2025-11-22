@@ -5,6 +5,31 @@ from app.rag.context_builder import build_context_from_persons
 from app.rag.llm_client import call_huggingface
 from app.rag.config import MAX_CONTEXT_PERSONS
 from app.rag.utils import logger
+from app.rag.logs import register_log
+
+
+def filtrar_personas(personas, answer):
+
+    if not answer:
+        return []
+
+    nombres_respuesta = [
+        linea.strip()
+        for linea in answer.split("\n")
+        if linea.strip()
+    ]
+
+    resultado = []
+    for persona in personas:
+        nombre_completo = f"{persona['primer_nombre']} {persona['segundo_nombre']} {persona['apellidos']}".strip()
+        
+        # Normalizar espacios dobles
+        nombre_completo = " ".join(nombre_completo.split())
+
+        if nombre_completo in nombres_respuesta:
+            resultado.append(persona)
+
+    return resultado
 
 
 async def rag_process(consulta: str) -> List[Dict[str, Any]]:
@@ -28,11 +53,18 @@ async def rag_process(consulta: str) -> List[Dict[str, Any]]:
     context = build_context_from_persons(mapped[:MAX_CONTEXT_PERSONS])
 
     # 4. Llamar al LLM (no afecta la respuesta enviada al frontend)
-    await call_huggingface(consulta, context)
+    llm = await call_huggingface(consulta, context)
+    respuesta = llm.get("answer")
 
+    personas = filtrar_personas(mapped, respuesta)
+
+    await register_log("LLM_CONSULT", {
+        "consulta": consulta,
+        "respuesta": respuesta
+    })
 
     # 5. Devolver SOLO la lista mapeada (frontend usa personas)
-    return mapped
+    return personas
 
 
 async def rag_full_process(consulta: str) -> Dict[str, Any]:
@@ -45,9 +77,16 @@ async def rag_full_process(consulta: str) -> Dict[str, Any]:
 
     context = build_context_from_persons(mapped[:MAX_CONTEXT_PERSONS])
     llm = await call_huggingface(consulta, context)
+    respuesta = llm.get("answer")
+    personas = filtrar_personas(mapped, respuesta)
+
+    await register_log("LLM_CONSULT", {
+        "consulta": consulta,
+        "respuesta": respuesta
+    })
 
     return {
-        "personas": mapped,
-        "answer": llm.get("answer"),
+        "personas": personas,
+        "answer": respuesta,
         "raw": llm.get("raw")
     }
