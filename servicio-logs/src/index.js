@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
+const { pool } = require("./db.js");
 
 const app = express();
 const PORT = 3005;
@@ -23,30 +24,33 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'UP' });
 });
 
-// In-memory storage for logs (temporal)
-let logs = [];
-
 // Add new log
-app.post('/logs', (req, res) => {
+app.post('/logs', async (req, res) => {
   try {
     const { timestamp, action, documentNumber, service, details } = req.body;
-    
-    const newLog = {
-      id: Date.now().toString(),
-      timestamp: timestamp || new Date().toISOString(),
+
+    const newTimestamp = timestamp || new Date().toISOString();
+
+    const query = `
+      INSERT INTO logs (
+        "timestamp", "action", "documentNumber", "service", "details", "receivedAt"
+      ) VALUES ($1, $2, $3, $4, $5, NOW())
+      RETURNING *;
+    `;
+
+    const values = [
+      newTimestamp,
       action,
       documentNumber,
       service,
-      details,
-      receivedAt: new Date().toISOString()
-    };
+      details || null
+    ];
 
-    logs.push(newLog);
-    console.log('New log registered:', newLog);
+    const { rows } = await pool.query(query, values);
 
     res.status(201).json({
-      message: 'Log registered successfully',
-      log: newLog
+      message: "Log registered successfully",
+      log: rows[0]
     });
 
   } catch (error) {
@@ -56,38 +60,35 @@ app.post('/logs', (req, res) => {
 });
 
 // Get all logs
-app.get('/logs', (req, res) => {
+app.get('/logs', async (req, res) => {
   try {
     const { action, documentNumber, date } = req.query;
-    
-    let filteredLogs = [...logs];
 
-    // Filter by action
+    let query = "SELECT * FROM logs WHERE 1=1";
+    const params = [];
+
     if (action) {
-      filteredLogs = filteredLogs.filter(log => 
-        log.action.toLowerCase().includes(action.toLowerCase())
-      );
+      params.push(`%${action}%`);
+      query += ` AND LOWER(action) LIKE LOWER($${params.length})`;
     }
 
-    // Filter by document number
     if (documentNumber) {
-      filteredLogs = filteredLogs.filter(log => 
-        log.documentNumber === documentNumber
-      );
+      params.push(documentNumber);
+      query += ` AND documentNumber = $${params.length}`;
     }
 
-    // Filter by date
     if (date) {
-      filteredLogs = filteredLogs.filter(log => 
-        log.timestamp.startsWith(date)
-      );
+      params.push(`${date}%`);
+      query += ` AND TO_CHAR(timestamp, 'YYYY-MM-DD') = $${params.length}`;
     }
+
+    const { rows } = await pool.query(query, params);
 
     res.json({
-      message: 'Logs retrieved successfully',
-      data: filteredLogs,
-      count: filteredLogs.length,
-      filters: { action, documentNumber, date }
+      message: "Logs retrieved successfully",
+      count: rows.length,
+      filters: { action, documentNumber, date },
+      data: rows
     });
 
   } catch (error) {
@@ -96,19 +97,24 @@ app.get('/logs', (req, res) => {
   }
 });
 
+
 // Get log by ID
-app.get('/logs/:id', (req, res) => {
+app.get('/logs/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const log = logs.find(l => l.id === id);
-    
-    if (!log) {
-      return res.status(404).json({ error: 'Log not found' });
+
+    const { rows } = await pool.query(
+      "SELECT * FROM logs WHERE id = $1",
+      [id]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: "Log not found" });
     }
 
     res.json({
-      message: 'Log found successfully',
-      data: log
+      message: "Log found successfully",
+      data: rows
     });
 
   } catch (error) {
@@ -117,52 +123,58 @@ app.get('/logs/:id', (req, res) => {
   }
 });
 
-// Clear all logs
-app.delete('/logs', (req, res) => {
-    try {
-      const previousCount = logs.length;
-      logs = [];
-      console.log('All logs cleared');
-      
-      res.json({
-        message: 'All logs cleared successfully',
-        logsDeleted: previousCount
-      });
-    } catch (error) {
-      console.error('Error clearing logs:', error);
-      res.status(500).json({ error: 'Internal server error' });
-    }
-  });
+// Clear all logs 
+app.delete('/logs', async (req, res) => {
+  try {
+    const { rowCount } = await pool.query("DELETE FROM logs");
+
+    res.json({
+      message: "All logs deleted successfully",
+      logsDeleted: rowCount
+    });
+
+  } catch (error) {
+    console.error('Error deleting logs:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 // Clear logs by filter
-app.delete('/logs/filter', (req, res) => {
-    try {
-      const { action, documentNumber, service } = req.body;
-      
-      const initialCount = logs.length;
-      
-      if (action || documentNumber || service) {
-        logs = logs.filter(log => 
-          (action && log.action !== action) &&
-          (documentNumber && log.documentNumber !== documentNumber) &&
-          (service && log.service !== service)
-        );
-      } else {
-        logs = [];
-      }
-      
-      const deletedCount = initialCount - logs.length;
-      
-      res.json({
-        message: 'Logs cleared by filter successfully',
-        logsDeleted: deletedCount,
-        filtersApplied: { action, documentNumber, service }
-      });
-    } catch (error) {
-      console.error('Error clearing logs by filter:', error);
-      res.status(500).json({ error: 'Internal server error' });
+app.delete('/logs/filter', async (req, res) => {
+  try {
+    const { action, documentNumber, service } = req.body;
+
+    let query = "DELETE FROM logs WHERE 1=1";
+    const params = [];
+
+    if (action) {
+      params.push(action);
+      query += ` AND action = $${params.length}`;
     }
-  });
+
+    if (documentNumber) {
+      params.push(documentNumber);
+      query += ` AND documentNumber = $${params.length}`;
+    }
+
+    if (service) {
+      params.push(service);
+      query += ` AND service = $${params.length}`;
+    }
+
+    const result = await pool.query(query, params);
+
+    res.json({
+      message: "Logs deleted by filter successfully",
+      logsDeleted: result.rowCount,
+      filtersApplied: { action, documentNumber, service }
+    });
+
+  } catch (error) {
+    console.error('Error deleting logs by filter:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 // Start server
 app.listen(PORT, () => {

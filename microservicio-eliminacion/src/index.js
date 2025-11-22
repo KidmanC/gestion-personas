@@ -1,8 +1,8 @@
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
-
 const axios = require('axios');
+const {pool} = require('./db.js')
 
 // Function to register logs
 const registerLog = async (action, documentNumber, details = {}) => {
@@ -52,78 +52,45 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'UP' });
 });
 
-// Mock data - temporal
-let mockPersons = [
-  {
-    id: '1',
-    firstName: 'Juan',
-    secondName: 'Carlos', 
-    lastNames: 'Perez Gomez',
-    birthDate: '1990-05-15',
-    gender: 'Male',
-    email: 'juan@example.com',
-    phone: '3001234567',
-    documentNumber: '123456789',
-    documentType: 'Citizen ID'
-  },
-  {
-    id: '2',
-    firstName: 'Maria',
-    lastNames: 'Garcia Lopez',
-    birthDate: '1995-08-20', 
-    gender: 'Female',
-    email: 'maria@example.com',
-    phone: '3109876543',
-    documentNumber: '987654321',
-    documentType: 'Citizen ID'
-  }
-];
-
 // Delete person by document number
 app.delete('/persons/:documentNumber', async (req, res) => {
   try {
     const { documentNumber } = req.params;
     console.log('Deleting person with document:', documentNumber);
-
-    // Find person index
-    const personIndex = mockPersons.findIndex(p => p.documentNumber === documentNumber);
     
-    if (personIndex === -1) {
-      return res.status(404).json({ 
-        error: 'Person not found',
-        documentNumber: documentNumber
+    const { rows } = await pool.query(
+    `SELECT * FROM persons WHERE "documentNumber" = $1`,
+      [documentNumber]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({
+        error: "Person not found",
+        documentNumber
       });
     }
 
-    // Store deleted person for response
-    const deletedPerson = mockPersons[personIndex];
-    
-    // Remove person from array
-    mockPersons.splice(personIndex, 1);
+    const personFound = rows[0];
 
-    // Register in log
-    await registerLog('PERSON_DELETED', documentNumber, {
-        deletedPerson: deletedPerson
-  });
+    await pool.query(
+      `DELETE FROM persons WHERE "documentNumber" = $1`,
+      [documentNumber]
+    );
+
+    await registerLog("PERSON_DELETED", documentNumber, {
+      deletedPerson: `${personFound.firstName} ${personFound.lastNames}`,
+      documentNumber: personFound.documentNumber
+    });
 
     res.json({
-      message: 'Person deleted successfully',
-      data: deletedPerson
+      message: "Person deleted successfully",
+      data: personFound
     });
 
   } catch (error) {
-    console.error('Error deleting person:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error("Error deleting person:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
-});
-
-// Get all persons (for testing)
-app.get('/persons', (req, res) => {
-  res.json({
-    message: 'Persons retrieved successfully',
-    data: mockPersons,
-    count: mockPersons.length
-  });
 });
 
 // Start server

@@ -2,6 +2,9 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const { body, validationResult } = require('express-validator');
+const { pool } = require('./db.js');
+const upload = require("./photos/upload");
+const multer = require("multer");
 
 const axios = require('axios');
 
@@ -53,22 +56,6 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'UP' });
 });
 
-// Mock data - temporal
-let mockPersons = [
-  {
-    id: '1',
-    firstName: 'Juan',
-    secondName: 'Carlos',
-    lastNames: 'Perez Gomez',
-    birthDate: '1990-05-15',
-    gender: 'Male',
-    email: 'juan@example.com',
-    phone: '3001234567',
-    documentNumber: '123456789',
-    documentType: 'Citizen ID'
-  }
-];
-
 // Validations for updating persons (same as creation)
 const updatePersonValidations = [
   body('firstName')
@@ -111,12 +98,11 @@ const updatePersonValidations = [
 ];
 
 // Update person by document number
-app.put('/persons/:documentNumber', updatePersonValidations, async (req, res) => {
+app.put('/persons/:documentNumber', upload.single("photoUrl"), updatePersonValidations, async (req, res) => {
   try {
-    // Check for validation errors
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         errors: errors.array().map(error => ({
           field: error.path,
           message: error.msg
@@ -125,43 +111,70 @@ app.put('/persons/:documentNumber', updatePersonValidations, async (req, res) =>
     }
 
     const { documentNumber } = req.params;
-    const updateData = req.body;
+    const updateData = { ...req.body };
 
-    console.log('Updating person with document:', documentNumber);
-    console.log('Update data:', updateData);
+    if (req.file) {
+      updateData.photoUrl = req.file.path;
+    }
 
-    // Find person
-    const personIndex = mockPersons.findIndex(p => p.documentNumber === documentNumber);
-    
-    if (personIndex === -1) {
-      return res.status(404).json({ 
+    const fields = Object.keys(updateData);
+
+    if (fields.length === 0) {
+      return res.status(400).json({ error: 'No fields to update' });
+    }
+
+    const setClause = fields
+      .map((field, index) => `"${field}" = $${index + 1}`)
+      .join(', ');
+
+    const values = Object.values(updateData);
+
+    values.push(documentNumber);
+
+    const query = `
+      UPDATE persons
+      SET ${setClause}
+      WHERE "documentNumber" = $${values.length}
+      RETURNING *;
+    `;
+
+    const { rows } = await pool.query(query, values);
+
+    if (rows.length === 0) {
+      return res.status(404).json({
         error: 'Person not found',
         documentNumber: documentNumber
       });
     }
 
-    // Update person data
-    mockPersons[personIndex] = {
-      ...mockPersons[personIndex],
-      ...updateData
-    };
-
-    // Register in log
     await registerLog('PERSON_UPDATED', documentNumber, {
-        updatedFields: Object.keys(updateData),
-        previousData: mockPersons[personIndex],
-        newData: updateData
+      updatedFields: fields,
+      newData: updateData
     });
 
     res.json({
       message: 'Person updated successfully',
-      data: mockPersons[personIndex]
+      data: rows[0]
     });
 
   } catch (error) {
     console.error('Error updating person:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: 'Error updating person' });
   }
+});
+
+app.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === "LIMIT_FILE_SIZE") {
+      return res.status(400).json({
+        error: "Photo cannot exceed 2MB"
+      });
+    }
+
+    return res.status(400).json({ error: err.message });
+  }
+
+  next(err);
 });
 
 // Start server

@@ -2,6 +2,10 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const { body, validationResult } = require('express-validator');
+const { pool } = require("./db.js");
+const upload = require("./photos/upload");
+const multer = require("multer");
+
 
 const app = express();
 const PORT = 3001;
@@ -106,22 +110,23 @@ const createPersonValidations = [
 ];
 
 // Endpoint to create persons WITH VALIDATIONS
-app.post('/persons', createPersonValidations, async (req, res) => {
+app.post('/persons', upload.single("photoUrl"), createPersonValidations, async (req, res) => {
+
   try {
-    // Check for validation errors
+    // Check validations
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         errors: errors.array().map(error => ({
           field: error.path,
           message: error.msg
         }))
       });
-    }
+    }   
 
-    const { 
+    const {
       firstName,
-      secondName, 
+      secondName,
       lastNames,
       birthDate,
       gender,
@@ -131,33 +136,78 @@ app.post('/persons', createPersonValidations, async (req, res) => {
       documentType
     } = req.body;
 
-    // Log received data (later will be in the log system)
+    const photoUrl = req.file ? req.file.path : null;
+
+    const checkQuery = `
+      SELECT id FROM persons
+      WHERE "email" = $1 OR "documentNumber" = $2
+    `;
+    const checkResult = await pool.query(checkQuery, [email, documentNumber]);
+
+    if (checkResult.rowCount > 0) {
+      return res.status(409).json({
+        error: 'Email or Document Number already exists'
+      });
+    }
+
+    const insertQuery = `
+      INSERT INTO persons (
+        "firstName", "secondName", "lastNames", "birthDate", "gender",
+        "email", "phone", "documentNumber", "documentType", "photoUrl"
+      )
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+      RETURNING "id", "firstName", "lastNames", "email", "phone"
+    `;
+
+    const insertValues = [
+      firstName,
+      secondName || null,
+      lastNames,
+      birthDate,
+      gender,
+      email,
+      phone,
+      documentNumber,
+      documentType,
+      photoUrl,
+    ];
+
+    const result = await pool.query(insertQuery, insertValues);
+    const createdPerson = result.rows[0];
+
     await registerLog('PERSON_CREATED', documentNumber, {
-        firstName: firstName,
-        lastNames: lastNames,
-        email: email,
-        documentType: documentType
+      email: email,
+      name: firstName,
+      documentType: documentType
     });
 
-    // Temporary response (later we'll connect to database)
     res.status(201).json({
       message: 'Person created successfully',
-      data: {
-        id: Math.random().toString(36).substr(2, 9),
-        documentNumber: documentNumber,
-        fullName: `${firstName} ${secondName || ''} ${lastNames}`.trim(),
-        email: email,
-        phone: phone
-      }
+      data: createdPerson
     });
-} catch (error) {
+
+  } catch (error) {
     console.error('Error creating person:', error);
-    // Register error in log
+
     await registerLog('PERSON_CREATION_ERROR', req.body.documentNumber, {
       error: error.message
     });
     res.status(500).json({ error: 'Internal server error' });
   }
+});
+
+app.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === "LIMIT_FILE_SIZE") {
+      return res.status(400).json({
+        error: "Photo cannot exceed 2MB"
+      });
+    }
+
+    return res.status(400).json({ error: err.message });
+  }
+
+  next(err);
 });
 
 // Start server
