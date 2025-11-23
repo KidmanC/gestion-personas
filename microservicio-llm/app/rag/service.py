@@ -8,13 +8,16 @@ from app.rag.utils import logger
 from app.rag.logs import register_log
 
 
+def normalize(text: str) -> str:
+    return " ".join(text.lower().split())
+
 def filtrar_personas(personas, answer):
 
     if not answer:
         return []
 
     nombres_respuesta = [
-        linea.strip()
+        normalize(linea)
         for linea in answer.split("\n")
         if linea.strip()
     ]
@@ -22,11 +25,10 @@ def filtrar_personas(personas, answer):
     resultado = []
     for persona in personas:
         nombre_completo = f"{persona['primer_nombre']} {persona['segundo_nombre']} {persona['apellidos']}".strip()
-        
-        # Normalizar espacios dobles
-        nombre_completo = " ".join(nombre_completo.split())
+        nombre_completo_norm = normalize(nombre_completo)
 
-        if nombre_completo in nombres_respuesta:
+        # Coincidencia exacta o parcial
+        if any(n in nombre_completo_norm for n in nombres_respuesta):
             resultado.append(persona)
 
     return resultado
