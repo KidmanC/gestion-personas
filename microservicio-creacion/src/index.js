@@ -69,7 +69,7 @@ const createPersonValidations = [
 
   // Second Name: not number and not longer than 30 characters (optional)
   body('secondName')
-    .optional()
+    .optional({ checkFalsy: true })
     .isLength({ max: 30 }).withMessage('Second name cannot be longer than 30 characters')
     .isAlpha('es-ES', { ignore: ' ' }).withMessage('Second name can only contain letters'),
 
