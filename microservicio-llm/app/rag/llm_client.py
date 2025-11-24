@@ -32,7 +32,7 @@ async def call_huggingface(prompt: str, context: str):
                     "Nunca inventes personas ni información adicional.\n"
                     "Siempre responde de forma directa."
                     "Siempre que se encuentre una posible respuesta detente y retornala, necesitas garantizar la velocidad"
-
+                    "Cuando se te hagan preguntas relacionadas con personas necesito que respondas solo con los nombres de las personas por ejemplo: Diana Marcela Ortiz Herrera  \nJulián Andrés Moreno Díaz  \nNatalia Andrea Cortés Ramírez"
                 )
             },
             {"role": "user","content": f"Contexto:\n{context}\n\nPregunta: {prompt}"}

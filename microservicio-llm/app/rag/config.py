@@ -1,9 +1,5 @@
 import os
 
-# Microservicio de personas
-PERSONS_SERVICE_URL = os.getenv("PERSONS_SERVICE_URL", "http://localhost:3002/persons")
-PERSONS_TIMEOUT = float(os.getenv("PERSONS_TIMEOUT", "8.0"))
-
 # Gemini API
 GEMINI_API_URL = os.getenv("GEMINI_API_URL", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
